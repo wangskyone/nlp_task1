@@ -2,6 +2,6 @@
 
 Team:ARIS_NLP
 
-Participants: Tianyi Wang; Li Yu
+Participants: Tianyi Wang; Yu Li
 
 CASIA Online and Offline Chinese Handwriting Databases:<https://nlpr.ia.ac.cn/databases/handwriting/Download.html>

@@ -10,7 +10,7 @@ from tqdm import tqdm
 
 
 #
-model = YOLO('YOLO_model/best.pt')  # load a pretrained model (recommended for training)
+model = YOLO('/nas_data/WTY/project/nlp_task1/runs/detect/train2/weights/best.pt')  # load a pretrained model (recommended for training)
 
 
 # Train the model with 2 GPUs
@@ -63,18 +63,18 @@ def convert_boxes(boxes, size):
 
 
 # eg. crop and sort images
-def get_img_text_dict(file_path=r'data/train/'):
+def get_img_text_dict(file_path=r'/nas_data/WTY/dataset/visualC3/train/'):
     char_label = file_path + 'char_label/'
     img_root_path = file_path + 'imgs/'
     img_path_text_dict = {}
 
-    char_labels = os.listdir(char_label)
+    char_labels = ['100_0001.txt']
     for item in tqdm(char_labels):
         text_path = char_label + item
         f = open(text_path, mode='r', encoding='utf-8')
         texts = f.readlines()
         f.close()
-        temp_dict = {}
+        temp = []
         for tx in texts:
             tx = tx.strip()
             tx = tx.split(',')
@@ -83,12 +83,12 @@ def get_img_text_dict(file_path=r'data/train/'):
             y = float(tx[1])
             w = float(tx[2])
             h = float(tx[3])
-            temp_dict[ch] = [x, y, w, h]
-        img_path_text_dict[img_root_path + item.split('.')[0] + '.jpg'] = temp_dict
+            temp.append([x,y,w,h,ch])
+        img_path_text_dict[img_root_path + item.split('.')[0] + '.jpg'] = temp
     return img_path_text_dict
 
 
-def crop_sort_img(file_path=r'data/train/'):
+def crop_sort_img(file_path=r'/nas_data/WTY/dataset/visualC3/train/'):
     img_text_dict = get_img_text_dict(file_path=file_path)
     for key, value in tqdm(img_text_dict.items()):
         results = model.predict([key], conf=0.5)
@@ -98,9 +98,11 @@ def crop_sort_img(file_path=r'data/train/'):
         size = img.size
         boxes = r.boxes.xywhn.cpu().numpy()
         boxes = convert_boxes(boxes, size)
-
-        sb1, sb2, sb3, sb4 = regularization_sorting(boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3], alpha=45,
-                                                    beta=30)
+        
+        alpha = boxes[:, 3].max()
+        beta = alpha * 2 / 3
+        sb1, sb2, sb3, sb4 = regularization_sorting(boxes[:, 0], boxes[:, 1], boxes[:, 2], boxes[:, 3], alpha=alpha,
+                                                    beta=beta)
         sb1, sb2, sb3, sb4 = np.expand_dims(sb1, axis=1), np.expand_dims(sb2, axis=1), np.expand_dims(sb3,
                                                                                                       axis=1), np.expand_dims(
             sb4, axis=1)
@@ -109,25 +111,16 @@ def crop_sort_img(file_path=r'data/train/'):
         f = open(r'results/train/index_img.txt', mode='a+', encoding='utf-8')
         for i, box in enumerate(boxes):
             x, y, w, h = box
+            value = sorted(value, key=lambda t: math.sqrt((t[0] - x) ** 2 + (t[1] - y) ** 2))
+            max_distance = 5
+            if math.sqrt((value[0][0] - x) ** 2 + (value[0][1] - y) ** 2) > max_distance:
+                continue
+            
+            choose_ch = value[0][-1]
+
             crop = img.crop((x, y, x + w, y + h))
             # change 'train' to 'valid' when get valid images index
             crop.save(r'results/train/' + key.split('/')[-1].replace('.jpg', '_' + str(i) + '.jpg'))
-            choose_ch = ''
-            distance = float('inf')
-            print(value.values())
-            for ch, ch_pos in value.items():
-                ch_x = ch_pos[0]
-                ch_y = ch_pos[1]
-                ch_w = ch_pos[2]
-                ch_h = ch_pos[3]
-                bi_li = 0.5 * (ch_w / w + ch_h / h)
-                x = x * bi_li
-                y = y * bi_li
-                w = w * bi_li
-                h = h * bi_li
-                if math.sqrt((ch_x - x + 0.5 * w) ** 2 + (ch_y - y + 0.5 * h) ** 2) <= distance:
-                    distance = math.sqrt((ch_x - x + 0.5 * w) ** 2 + (ch_y - y + 0.5 * h) ** 2)
-                    choose_ch = ch
 
             f.write(
                 r'results/train/' + key.split('/')[-1].replace('.jpg', '_' + str(i) + '.jpg') + '\t' + choose_ch + '\n')
