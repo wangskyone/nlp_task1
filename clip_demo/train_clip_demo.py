@@ -1,5 +1,6 @@
 import argparse
 
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -8,14 +9,17 @@ from torch.optim import lr_scheduler
 from tqdm import tqdm
 
 from cn_clip.clip import load_from_name
-from img_ch_dataset import get_data_loader, get_all_valid_words, valid_method
+from img_ch_dataset import get_data_loader, valid_method
 
 
-def clip_loss(img_tensor, ch_tensor, device):
+def clip_loss(img_tensor, ch_tensor, logit_scale, device):
+    logit_scale = logit_scale.exp()
+    logits_per_image = logit_scale * img_tensor @ ch_tensor.t()
+    logits_per_text = logits_per_image.t()
     ground_truth = torch.arange(len(img_tensor), dtype=torch.long, device=device)
     loss_fct = nn.CrossEntropyLoss()
-    loss_img = loss_fct(img_tensor, ground_truth)
-    loss_token = loss_fct(ch_tensor, ground_truth)
+    loss_img = loss_fct(logits_per_image, ground_truth)
+    loss_token = loss_fct(logits_per_text, ground_truth)
     loss = (loss_token + loss_img) / 2
     return loss
 
@@ -30,12 +34,13 @@ def train(args):
     scheduler = lr_scheduler.StepLR(optimizer, step_size=args.step_size, gamma=args.gamma)
     data_loader = get_data_loader(process=process, batch_size=args.batch_size, img_ch_dir=args.img_ch_dir,
                                   mode=args.mode)
-    clip_net.train()
+    best_acc = 0
+    logit_scale = nn.Parameter(torch.ones([]) * np.log(1 / 0.07))
+    batch_num = 0
     for i in range(args.epoch):
-        scheduler.step()
-        batch_num = 0
         with torch.cuda.amp.autocast(enabled=True):
             for idx, data in tqdm(enumerate(tqdm(data_loader))):
+                clip_net.train()
                 imgs = data[0].to(device)
                 tokens = data[1].to(device)
                 batch_num += 1
@@ -45,15 +50,22 @@ def train(args):
                     token_tensor = clip_net.encode_text(tokens)
                     imgs_tensor = imgs_tensor / imgs_tensor.norm(dim=-1, keepdim=True)
                     token_tensor = token_tensor / token_tensor.norm(dim=-1, keepdim=True)
-                    loss = clip_loss(img_tensor=imgs_tensor, ch_tensor=token_tensor, device=args.device)
+                    loss = clip_loss(img_tensor=imgs_tensor, ch_tensor=token_tensor, device=args.device,logit_scale=logit_scale)
                     loss.backward()
                     optimizer.step()
+                if batch_num % args.loss_step == 0:
+                    logger.info('step:{},loss:{}'.format(str(batch_num), str(float(loss))))
                 if batch_num % args.valid_step == 0:
                     clip_net.eval()
                     acc = valid_method(img_ch_dir=args.img_ch_dir, device=args.device, clip_net=clip_net,
                                        process=process)
-                    logger.info('acc:{} in step:{},loss:{}'.format(str(acc),str(batch_num), str(float(loss))))
-        torch.save(clip_net.state_dict(), args.model_dir + f'{args.clip_img_head}_epoch_{str(i)}.pth')
+                    if acc > best_acc:
+                        best_acc = acc
+                        logger.info('higher acc:{}, save model'.format(str(acc)))
+                        torch.save(clip_net.state_dict(), args.model_dir + f'{args.clip_img_head}_epoch_{str(i)}.pth')
+                    logger.info('acc:{} in step:{},loss:{}'.format(str(acc), str(batch_num), str(float(loss))))
+
+        scheduler.step()
 
 
 def main():
@@ -73,6 +85,7 @@ def main():
     parser.add_argument('--valid_step', type=int, default=10)
     parser.add_argument('--gamma', type=float, default=0.1)
     parser.add_argument('--epoch', type=int, default=10)
+    parser.add_argument('--loss_step', type=int, default=10)
     parser.add_argument('--weight_decay', type=float, default=0.001)
     parser.add_argument('--clip_img_head', type=str, default='RN50',
                         choices=['ViT-B-16', 'ViT-L-14', 'ViT-L-14-336', 'ViT-H-14', 'RN50'])
