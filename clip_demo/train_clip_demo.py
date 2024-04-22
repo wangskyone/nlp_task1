@@ -62,7 +62,7 @@ def train(args):
                     if acc > best_acc:
                         best_acc = acc
                         logger.info('higher acc:{}, save model'.format(str(acc)))
-                        torch.save(clip_net.state_dict(), args.model_dir + f'{args.clip_img_head}_epoch_{str(i)}.pth')
+                        torch.save(clip_net.state_dict(), args.model_dir + f'{args.clip_img_head}.pth')
                     logger.info('acc:{} in step:{},loss:{}'.format(str(acc), str(batch_num), str(float(loss))))
 
         scheduler.step()
