@@ -1,5 +1,11 @@
 import argparse
+import os
 
+os.environ["TOKENIZERS_PARALLELISM"] = "false"
+from transformers import AutoTokenizer
+
+from cn_clip import clip
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -107,6 +113,8 @@ def main():
     parser.add_argument('--weight_decay', type=float, default=0.001)
     parser.add_argument('--clip_img_head', type=str, default='RN50',
                         choices=['ViT-B-16', 'ViT-L-14', 'ViT-L-14-336', 'ViT-H-14', 'RN50'])
+    parser.add_argument('--model_mode', type=str, default='common',
+                        choices=['clip', 'common'])
     args = parser.parse_args()
     train(args)
 
