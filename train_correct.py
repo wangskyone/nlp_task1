@@ -10,7 +10,7 @@ import os
 from sklearn.metrics import accuracy_score
 from correct_dataset import CorrectDataset
 
-# os.environ["WANDB_API_KEY"] = "4083f56e4bba6c43fad3916f594c830bd98d1ac8"
+# os.environ["WANDB_API_KEY"] = ""
 # os.environ["WANDB_MODE"] = "online"
 
 def compute_metrics(eval_preds):
