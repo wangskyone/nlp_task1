@@ -3,3 +3,8 @@ results/
 yolov8x.pt/
 clip package
 yolov8x.pt
+work_dirs/
+tools/
+clip_demo/model
+clip_demo/model_test
+**/__pycache__
